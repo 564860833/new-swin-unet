@@ -33,7 +33,7 @@ parser.add_argument('--img_size', type=int,
                     default=224, help='input patch size of network input')
 parser.add_argument('--seed', type=int,
                     default=1234, help='random seed')
-parser.add_argument('--cfg', type=str, required=True, metavar="FILE", help='path to config file', )
+parser.add_argument('--cfg', type=str, default='./configs/swin_tiny_patch4_window7_224_lite.yaml', metavar="FILE", help='path to config file', )
 parser.add_argument(
     "--opts",
     help="Modify config options by adding 'KEY VALUE' pairs. ",
@@ -56,7 +56,7 @@ parser.add_argument('--eval', action='store_true', help='Perform evaluation only
 parser.add_argument('--throughput', action='store_true', help='Test throughput only')
 # parser.add_argument("--dataset_name", default="datasets")
 parser.add_argument("--n_class", default=4, type=int)
-parser.add_argument("--num_workers", default=8, type=int)
+parser.add_argument("--num_workers", default=0, type=int)
 parser.add_argument("--eval_interval", default=1, type=int)
 
 args = parser.parse_args()
@@ -101,6 +101,6 @@ if __name__ == "__main__":
     trainer_synapse(args, net, args.output_dir)
 
 
-#  python train.py --dataset Synapse --cfg configs/swin_tiny_patch4_window7_224_lite.yaml --root_path data/Synapse --max_epochs 150 --output_dir models/Synapse --img_size 224 --base_lr 0.05 --batch_size 24 --num_workers 0 --n_class 9
+#  python train.py --dataset Synapse --root_path data/Synapse --max_epochs 150 --output_dir models/Synapse --img_size 224 --base_lr 0.05 --batch_size 24  --n_class 9
 
 # python train.py --output_dir ./model_out/datasets --dataset datasets --img_size 224 --batch_size 32 --cfg configs/swin_tiny_patch4_window7_224_lite.yaml --root_path /media/aicvi/11111bdb-a0c7-4342-9791-36af7eb70fc0/NNUNET_OUTPUT/nnunet_preprocessed/Dataset001_mm/nnUNetPlans_2d_split
