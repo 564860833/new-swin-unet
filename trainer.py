@@ -14,6 +14,7 @@ from tqdm import tqdm
 from collections import OrderedDict  # 导入 OrderedDict
 
 from utils import DiceLoss
+import matplotlib.pyplot as plt
 
 
 def trainer_synapse(args, model, snapshot_path):
@@ -55,6 +56,15 @@ def trainer_synapse(args, model, snapshot_path):
     iter_num = 0
     start_epoch = 0
     best_loss = 10e10
+
+    # 初始化用于绘图的列表
+    train_losses = []
+    val_losses = []
+    train_ce_losses = []
+    val_ce_losses = []
+    train_dice_losses = []
+    val_dice_losses = []
+    epochs_list = []
 
     # --- 添加继续训练 (resume) 逻辑 ---
     if args.resume and os.path.exists(args.resume):
@@ -155,6 +165,12 @@ def trainer_synapse(args, model, snapshot_path):
         logging.info('Train epoch: %d : loss : %f, loss_ce: %f, loss_dice: %f' % (
             epoch_num, batch_loss, batch_ce_loss, batch_dice_loss))
 
+        # --- 新增：收集训练损失 ---
+        train_losses.append(batch_loss)
+        train_ce_losses.append(batch_ce_loss)
+        train_dice_losses.append(batch_dice_loss)
+        # --- 结束新增 ---
+
         if (epoch_num + 1) % args.eval_interval == 0:
             model.eval()
             batch_dice_loss = 0
@@ -175,6 +191,13 @@ def trainer_synapse(args, model, snapshot_path):
                 batch_loss = 0.4 * batch_ce_loss + 0.6 * batch_dice_loss
                 logging.info('Val epoch: %d : loss : %f, loss_ce: %f, loss_dice: %f' % (
                     epoch_num, batch_loss, batch_ce_loss, batch_dice_loss))
+
+                # 只有在验证时才记录，以保持数据点对齐
+                val_losses.append(batch_loss)
+                val_ce_losses.append(batch_ce_loss)
+                val_dice_losses.append(batch_dice_loss)
+                epochs_list.append(epoch_num)
+                # --- 结束新增 ---
 
                 # --- 修改保存逻辑 ---
 
@@ -218,6 +241,65 @@ def trainer_synapse(args, model, snapshot_path):
                 #     torch.save(model.state_dict(), save_mode_path)
                 # logging.info("save model to {}".format(save_mode_path))
                 # --- 结束修改 ---
+
+    # --- 新增：生成和保存 Matplotlib 图表 ---
+    logging.info("Generating and saving loss plots...")
+    try:
+        # 仅当列表不为空时才绘图（即至少完成了一个验证周期）
+        if epochs_list:
+            save_path_base = os.path.join(snapshot_path, "loss_plots")
+            os.makedirs(save_path_base, exist_ok=True)
+
+            # 为了对齐，我们只绘制与验证周期相对应的训练损失
+            aligned_train_losses = [train_losses[i] for i in epochs_list]
+            aligned_train_ce_losses = [train_ce_losses[i] for i in epochs_list]
+            aligned_train_dice_losses = [train_dice_losses[i] for i in epochs_list]
+
+            # 绘制总损失
+            plt.figure(figsize=(10, 5))
+            plt.plot(epochs_list, aligned_train_losses, label='Train Total Loss')
+            plt.plot(epochs_list, val_losses, label='Validation Total Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.legend()
+            plt.title('Training and Validation Total Loss')
+            plot_save_path = os.path.join(save_path_base, 'total_loss_plot.png')
+            plt.savefig(plot_save_path)
+            plt.close()
+            logging.info(f"Saved total loss plot to {plot_save_path}")
+
+            # 绘制 CE 损失
+            plt.figure(figsize=(10, 5))
+            plt.plot(epochs_list, aligned_train_ce_losses, label='Train CE Loss')
+            plt.plot(epochs_list, val_ce_losses, label='Validation CE Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.legend()
+            plt.title('Training and Validation CE Loss')
+            plot_save_path_ce = os.path.join(save_path_base, 'ce_loss_plot.png')
+            plt.savefig(plot_save_path_ce)
+            plt.close()
+            logging.info(f"Saved CE loss plot to {plot_save_path_ce}")
+
+            # 绘制 Dice 损失
+            plt.figure(figsize=(10, 5))
+            plt.plot(epochs_list, aligned_train_dice_losses, label='Train Dice Loss')
+            plt.plot(epochs_list, val_dice_losses, label='Validation Dice Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.legend()
+            plt.title('Training and Validation Dice Loss')
+            plot_save_path_dice = os.path.join(save_path_base, 'dice_loss_plot.png')
+            plt.savefig(plot_save_path_dice)
+            plt.close()
+            logging.info(f"Saved Dice loss plot to {plot_save_path_dice}")
+
+        else:
+            logging.warning("No validation epochs completed, skipping plot generation.")
+
+    except Exception as e:
+        logging.warning(f"Could not generate or save plots: {e}")
+    # --- 结束新增 ---
 
     writer.close()
     return "Training Finished!"
