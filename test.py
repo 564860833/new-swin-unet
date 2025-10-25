@@ -10,12 +10,14 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from collections import OrderedDict  # 导入 OrderedDict
 
 from config import get_config
 from datasets.dataset_synapse import Synapse_dataset
 from networks.vision_transformer import SwinUnet as ViT_seg
 from utils import test_single_volume
 
+# ... (parser 定义部分保持不变) ...
 parser = argparse.ArgumentParser()
 parser.add_argument('--root_path', type=str,
                     default='../data/Synapse/test_vol_h5',
@@ -125,12 +127,68 @@ if __name__ == "__main__":
 
     net = ViT_seg(config, img_size=args.img_size, num_classes=args.num_classes).cuda()
 
+    # --- 修改加载逻辑 ---
     snapshot = os.path.join(args.output_dir, 'best_model.pth')
     if not os.path.exists(snapshot):
         snapshot = snapshot.replace('best_model', 'epoch_' + str(args.max_epochs - 1))
-    msg = net.load_state_dict(torch.load(snapshot))
-    print("self trained swin unet", msg)
+    if not os.path.exists(snapshot):
+        snapshot = os.path.join(args.output_dir, 'last_model.pth')
+
+    if not os.path.exists(snapshot):
+        logging.error(f"Snapshot not found at {snapshot} or fallbacks.")
+        sys.exit(1)
+
+    logging.info(f"Loading model snapshot from {snapshot}")
+    try:
+        # 加载 checkpoint 字典
+        checkpoint = torch.load(snapshot, map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+
+        # 提取模型状态字典
+        if 'model_state_dict' in checkpoint:
+            state_dict = checkpoint['model_state_dict']
+        else:
+            state_dict = checkpoint  # 兼容旧格式
+
+        # 处理 DataParallel 包装的键
+        new_state_dict = OrderedDict()
+        is_parallel = any(k.startswith('module.') for k in state_dict.keys())
+        is_model_parallel = isinstance(net, torch.nn.DataParallel)  # 检查当前模型是否为 parallel
+
+        if is_parallel and not is_model_parallel:
+            # Checkpoint 是 parallel, 模型不是: 移除 'module.'
+            for k, v in state_dict.items():
+                new_state_dict[k.replace('module.', '')] = v
+            msg = net.load_state_dict(new_state_dict)
+        elif not is_parallel and is_model_parallel:
+            # Checkpoint 不是 parallel, 模型是: 添加 'module.'
+            for k, v in state_dict.items():
+                new_state_dict['module.' + k] = v
+            msg = net.load_state_dict(new_state_dict)
+        else:
+            # 状态一致
+            msg = net.load_state_dict(state_dict)
+
+        print("Loaded self trained swin unet.", msg)
+        logging.info(f"Loaded model state. Missing keys: {msg.missing_keys}, Unexpected keys: {msg.unexpected_keys}")
+
+    except Exception as e:
+        logging.error(f"Failed to load checkpoint from {snapshot}: {e}")
+        # 尝试后备加载（假设是旧格式）
+        try:
+            logging.info("Attempting fallback load (assuming old format)...")
+            state_dict = torch.load(snapshot, map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+            msg = net.load_state_dict(state_dict)
+            print("Loaded self trained swin unet (fallback).", msg)
+            logging.info(
+                f"Loaded model state (fallback). Missing keys: {msg.missing_keys}, Unexpected keys: {msg.unexpected_keys}")
+        except Exception as e2:
+            logging.error(f"Fallback load also failed: {e2}")
+            sys.exit(1)
+
+    # msg = net.load_state_dict(torch.load(snapshot)) # <-- 原始代码
+    # print("self trained swin unet", msg) # <-- 原始代码
     snapshot_name = snapshot.split('/')[-1]
+    # --- 结束修改 ---
 
     log_folder = './test_log/test_log_'
     os.makedirs(log_folder, exist_ok=True)
@@ -147,7 +205,3 @@ if __name__ == "__main__":
     else:
         test_save_path = None
     inference(args, net, test_save_path)
-
-# python train.py --dataset Synapse --cfg $CFG --root_path $DATA_DIR --max_epochs $EPOCH_TIME --output_dir $OUT_DIR --img_size $IMG_SIZE --base_lr $LEARNING_RATE --batch_size $BATCH_SIZE
-# python train.py --output_dir './model_out/datasets' --dataset datasets --img_size 224 --batch_size 32 --cfg configs/swin_tiny_patch4_window7_224_lite.yaml --root_path /media/aicvi/11111bdb-a0c7-4342-9791-36af7eb70fc0/NNUNET_OUTPUT/nnunet_preprocessed/Dataset001_mm/nnUNetPlans_2d_split
-# python test.py --output_dir ./model_out/datasets --dataset datasets --cfg configs/swin_tiny_patch4_window7_224_lite.yaml --is_saveni --root_path /media/aicvi/11111bdb-a0c7-4342-9791-36af7eb70fc0/NNUNET_OUTPUT/nnunet_preprocessed/Dataset001_mm/test --max_epoch 150 --base_lr 0.05 --img_size 224 --batch_size 24
