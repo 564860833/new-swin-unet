@@ -10,6 +10,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 from config import get_config
 from datasets.dataset_synapse import Synapse_dataset
@@ -69,12 +70,18 @@ if args.dataset == "Synapse":
 config = get_config(args)
 
 
-def inference(args, model, test_save_path=None):
+def inference(args, model, log_folder, test_save_path=None):  # <-- 修改函数定义
     db_test = Synapse_dataset(base_dir=args.volume_path, split=args.split_name, list_dir=args.list_dir)
     testloader = DataLoader(db_test, batch_size=1, shuffle=False, num_workers=1)
     logging.info("{} test iterations per epoch".format(len(testloader)))
     model.eval()
     metric_list = 0.0
+
+    # <-- 添加列表以存储指标 -->
+    all_case_names = []
+    all_mean_dice = []
+    all_mean_hd95 = []
+
     for i_batch, sampled_batch in tqdm(enumerate(testloader)):
         # h, w = sampled_batch["image"].size()[2:]
         image, label, case_name = sampled_batch["image"], sampled_batch["label"], sampled_batch['case_name'][0]
@@ -86,12 +93,45 @@ def inference(args, model, test_save_path=None):
         metric_list += np.array(metric_i)
         logging.info('idx %d case %s mean_dice %f mean_hd95 %f' % (
             i_batch, case_name, np.mean(metric_i, axis=0)[0], np.mean(metric_i, axis=0)[1]))
+
+        # <-- 记录指标 -->
+        all_case_names.append(case_name)
+        all_mean_dice.append(np.mean(metric_i, axis=0)[0])
+        all_mean_hd95.append(np.mean(metric_i, axis=0)[1])
+
     metric_list = metric_list / len(db_test)
     for i in range(1, args.num_classes):
         logging.info('Mean class %d mean_dice %f mean_hd95 %f' % (i, metric_list[i - 1][0], metric_list[i - 1][1]))
     performance = np.mean(metric_list, axis=0)[0]
     mean_hd95 = np.mean(metric_list, axis=0)[1]
     logging.info('Testing performance in best val model: mean_dice : %f mean_hd95 : %f' % (performance, mean_hd95))
+
+    # <-- 添加绘图代码 -->
+    # 绘制 Mean Dice 柱状图
+    plt.figure(figsize=(max(len(all_case_names) / 2, 10), 6))  # 调整图像大小
+    plt.bar(all_case_names, all_mean_dice)
+    plt.xlabel('Case')
+    plt.ylabel('Mean Dice')
+    plt.title('Mean Dice Score per Case')
+    plt.xticks(rotation=90)
+    plt.tight_layout()  # 调整布局防止标签重叠
+    plt.savefig(os.path.join(log_folder, 'mean_dice_per_case.png'))
+    plt.close()
+
+    # 绘制 Mean HD95 柱状图
+    plt.figure(figsize=(max(len(all_case_names) / 2, 10), 6))  # 调整图像大小
+    plt.bar(all_case_names, all_mean_hd95)
+    plt.xlabel('Case')
+    plt.ylabel('Mean HD95')
+    plt.title('Mean HD95 Score per Case')
+    plt.xticks(rotation=90)
+    plt.tight_layout()  # 调整布局防止标签重叠
+    plt.savefig(os.path.join(log_folder, 'mean_hd95_per_case.png'))
+    plt.close()
+
+    logging.info("Metric plots saved to {}".format(log_folder))
+    # <-- 绘图代码结束 -->
+
     return "Testing Finished!"
 
 
@@ -146,7 +186,7 @@ if __name__ == "__main__":
         os.makedirs(test_save_path, exist_ok=True)
     else:
         test_save_path = None
-    inference(args, net, test_save_path)
+    inference(args, net, log_folder, test_save_path)  # <-- 修改函数调用
 
 # python train.py --dataset Synapse --cfg $CFG --root_path $DATA_DIR --max_epochs $EPOCH_TIME --output_dir $OUT_DIR --img_size $IMG_SIZE --base_lr $LEARNING_RATE --batch_size $BATCH_SIZE
 # python train.py --output_dir './model_out/datasets' --dataset datasets --img_size 224 --batch_size 32 --cfg configs/swin_tiny_patch4_window7_224_lite.yaml --root_path /media/aicvi/11111bdb-a0c7-4342-9791-36af7eb70fc0/NNUNET_OUTPUT/nnunet_preprocessed/Dataset001_mm/nnUNetPlans_2d_split
