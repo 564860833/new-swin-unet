@@ -13,6 +13,7 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from utils import DiceLoss
+import matplotlib.pyplot as plt  # <-- 添加导入
 
 
 def trainer_synapse(args, model, snapshot_path):
@@ -53,6 +54,17 @@ def trainer_synapse(args, model, snapshot_path):
     max_epoch = args.max_epochs
     max_iterations = args.max_epochs * len(train_loader)  # max_epoch = max_iterations // len(trainloader) + 1
     logging.info("{} iterations per epoch. {} max iterations ".format(len(train_loader), max_iterations))
+
+    # <-- 添加列表以存储损失值 -->
+    train_loss_list = []
+    train_ce_loss_list = []
+    train_dice_loss_list = []
+    val_loss_list = []
+    val_ce_loss_list = []
+    val_dice_loss_list = []
+    epoch_list = []
+    val_epoch_list = []
+
     iterator = tqdm(range(max_epoch), ncols=70)
     best_loss = 10e10
     for epoch_num in iterator:
@@ -96,6 +108,13 @@ def trainer_synapse(args, model, snapshot_path):
         batch_loss = 0.4 * batch_ce_loss + 0.6 * batch_dice_loss
         logging.info('Train epoch: %d : loss : %f, loss_ce: %f, loss_dice: %f' % (
             epoch_num, batch_loss, batch_ce_loss, batch_dice_loss))
+
+        # <-- 记录训练损失 -->
+        train_loss_list.append(batch_loss)
+        train_ce_loss_list.append(batch_ce_loss)
+        train_dice_loss_list.append(batch_dice_loss)
+        epoch_list.append(epoch_num)
+
         if (epoch_num + 1) % args.eval_interval == 0:
             model.eval()
             batch_dice_loss = 0
@@ -116,6 +135,13 @@ def trainer_synapse(args, model, snapshot_path):
                 batch_loss = 0.4 * batch_ce_loss + 0.6 * batch_dice_loss
                 logging.info('Val epoch: %d : loss : %f, loss_ce: %f, loss_dice: %f' % (
                     epoch_num, batch_loss, batch_ce_loss, batch_dice_loss))
+
+                # <-- 记录验证损失 -->
+                val_loss_list.append(batch_loss)
+                val_ce_loss_list.append(batch_ce_loss)
+                val_dice_loss_list.append(batch_dice_loss)
+                val_epoch_list.append(epoch_num)
+
                 if batch_loss < best_loss:
                     save_mode_path = os.path.join(snapshot_path, 'best_model.pth')
                     torch.save(model.state_dict(), save_mode_path)
@@ -126,4 +152,42 @@ def trainer_synapse(args, model, snapshot_path):
                 logging.info("save model to {}".format(save_mode_path))
 
     writer.close()
+
+    # <-- 添加绘图代码 -->
+    # 绘制 总损失 曲线
+    plt.figure()
+    plt.plot(epoch_list, train_loss_list, label='Train Total Loss')
+    plt.plot(val_epoch_list, val_loss_list, label='Val Total Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Total Loss Curve')
+    plt.legend()
+    plt.savefig(os.path.join(snapshot_path, 'total_loss_curve.png'))
+    plt.close()
+
+    # 绘制 CE Loss 曲线
+    plt.figure()
+    plt.plot(epoch_list, train_ce_loss_list, label='Train CE Loss')
+    plt.plot(val_epoch_list, val_ce_loss_list, label='Val CE Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('CE Loss Curve')
+    plt.legend()
+    plt.savefig(os.path.join(snapshot_path, 'ce_loss_curve.png'))
+    plt.close()
+
+    # 绘制 Dice Loss 曲线
+    plt.figure()
+    plt.plot(epoch_list, train_dice_loss_list, label='Train Dice Loss')
+    plt.plot(val_epoch_list, val_dice_loss_list, label='Val Dice Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Dice Loss Curve')
+    plt.legend()
+    plt.savefig(os.path.join(snapshot_path, 'dice_loss_curve.png'))
+    plt.close()
+
+    logging.info("Loss curves saved to {}".format(snapshot_path))
+    # <-- 绘图代码结束 -->
+
     return "Training Finished!"
