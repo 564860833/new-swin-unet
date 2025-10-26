@@ -39,7 +39,7 @@ def trainer_synapse(args, model, snapshot_path):
     train_loader = DataLoader(db_train, batch_size=batch_size, shuffle=True, num_workers=args.num_workers,
                               pin_memory=True,
                               worker_init_fn=worker_init_fn)
-    val_loader = DataLoader(db_train, batch_size=batch_size, shuffle=False, num_workers=args.num_workers,
+    val_loader = DataLoader(db_val, batch_size=batch_size, shuffle=False, num_workers=args.num_workers,
                             pin_memory=True,
                             worker_init_fn=worker_init_fn)
     if args.n_gpu > 1:
